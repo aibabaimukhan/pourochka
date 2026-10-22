@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Дашборд</title><link rel="stylesheet" href="style.css">
+<style>
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 20px}.stat{flex:1;min-width:140px;padding:14px 16px}.stat b{display:block;font:600 28px Georgia,serif}.stat span{color:var(--mute);font-size:14px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}.bar input,.bar select{flex:1;min-width:160px;width:auto}
+details{background:var(--card);border:1px solid var(--line);border-radius:8px;margin-bottom:8px}details[open]{border-color:var(--acc)}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 16px;flex-wrap:wrap}summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--mute);transition:transform .15s}details[open] summary::before{transform:rotate(90deg)}
+.nm{font-weight:600;flex:1;min-width:180px}.cnt{font-weight:700;color:var(--acc)}.mu{color:var(--mute);font-size:14px}
+.tag{font-size:13px;padding:2px 8px;border-radius:99px;background:var(--badbg);color:var(--bad)}
+.tw{overflow-x:auto;padding:0 16px 14px}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:600}tr.bl td{color:var(--bad)}
+.bl-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+h2{font:600 18px Georgia,serif;margin:28px 0 10px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}
+</style></head>
+<body>
+<main id="login" style="max-width:420px"><h1>Дашборд</h1><p class="sub">Вход для администратора</p>
+<form id="lf" class="card"><label for="pw">Пароль</label><input id="pw" type="password" required autocomplete="current-password">
+<p><button type="submit">Войти</button></p><div id="lmsg" class="msg err hide"></div></form></main>
+<main id="app" class="wide hide">
+<div class="top"><div><h1>Кто делал поурочки</h1><p class="sub" id="upd"></p></div><div><button class="ghost sm" id="rf">Обновить</button> <button class="ghost sm" id="out">Выйти</button></div></div>
+<div class="stats" id="stats"></div>
+<div class="bar"><input id="q" type="search" placeholder="Поиск по ФИО, группе, теме"><select id="sort"><option value="last">Сначала недавние</option><option value="count">Больше поурочек</option><option value="name">По алфавиту</option></select></div>
+<div id="list"></div>
+<h2>Заблокированные</h2>
+<form id="bf" class="bar"><input id="be" required maxlength="120" placeholder="ФИО, имя или отчество"><button type="submit" class="danger">Заблокировать</button></form>
+<p class="mu">Блокируется каждый, в чьём ФИО есть все указанные слова (регистр, ә/а, қ/к и т. п. не важны).</p>
+<div id="bl"></div></main>
+<script src="config.js"></script>
+<script>
+const $ = id => document.getElementById(id), esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const TYPE = { combined: 'Комбинированный', practice: 'Практика' }, LANG = { kk: 'Қазақша', ru: 'Русский' };
+let token = sessionStorage.getItem('lp_tok') || '', D = null; const openKeys = new Set();
+async function call(p) { const r = await api(Object.assign({ token }, p)); if (r.error === 'auth') { logout(); throw new Error('Сессия истекла'); } if (!r.ok) throw new Error(r.error); return r; }
+function logout() { token = ''; sessionStorage.removeItem('lp_tok'); $('app').classList.add('hide'); $('login').classList.remove('hide'); }
+$('lf').onsubmit = async e => { e.preventDefault(); const m = $('lmsg'); m.classList.add('hide');
+  try { const r = await api({ action: 'login', password: $('pw').value }); if (!r.ok) throw new Error(r.error); token = r.token; sessionStorage.setItem('lp_tok', token); $('pw').value = ''; load(); }
+  catch (err) { m.textContent = err.message; m.classList.remove('hide'); } };
+$('out').onclick = logout; $('rf').onclick = () => load();
+async function load() { try { D = await call({ action: 'stats' }); $('login').classList.add('hide'); $('app').classList.remove('hide'); $('upd').textContent = 'Обновлено ' + new Date().toLocaleTimeString('ru-RU'); render(); } catch (e) { if (e.message !== 'Сессия истекла') alert(e.message); } }
+async function setBlock(entry, on) { if (on && !confirm('Заблокировать «' + entry + '»?')) return; try { await call({ action: on ? 'block' : 'unblock', entry }); load(); } catch (e) { alert(e.message); } }
+function render() {
+  $('stats').innerHTML = [[D.total, 'поурочек всего'], [D.today, 'сегодня'], [D.people.length, 'преподавателей'], [D.blocked.length, 'в блокировке']].map(s => `<div class="card stat"><b>${s[0]}</b><span>${s[1]}</span></div>`).join('');
+  const q = $('q').value.trim().toLowerCase(), s = $('sort').value;
+  const ppl = D.people.filter(p => !q || (p.name + ' ' + p.records.map(r => r.group + ' ' + r.topic).join(' ')).toLowerCase().includes(q))
+    .sort((a, b) => s === 'count' ? b.count - a.count : s === 'name' ? a.name.localeCompare(b.name, 'ru') : b.last.localeCompare(a.last));
+  $('list').innerHTML = ppl.map(p => `<details data-k="${esc(p.key)}" ${openKeys.has(p.key) ? 'open' : ''}><summary>
+    <span class="nm">${esc(p.name)}</span><span class="cnt">${p.count}×</span>
+    <span class="mu">${esc(Object.keys(p.groups).join(', '))}</span><span class="mu">${esc(p.last.slice(0, 16))}</span>
+    ${p.blocked ? '<span class="tag">заблокирован</span>' : ''}${p.attempts ? `<span class="tag">отказов: ${p.attempts}</span>` : ''}
+    ${p.blocked ? '' : `<button class="danger sm" data-b="${esc(p.name)}">Заблокировать</button>`}</summary>
+    <div class="tw"><table><tr><th>Когда</th><th>Группа</th><th>Тема</th><th>Модуль</th><th>Дата урока</th><th>Тип / язык</th></tr>
+    ${p.records.map(r => `<tr class="${r.status === 'ok' ? '' : 'bl'}"><td>${esc(r.time.slice(0, 16))}</td><td>${esc(r.group)}</td><td>${esc(r.topic)}${r.status === 'ok' ? '' : ' (отказ: блок)'}</td><td>${esc(r.module)}</td><td>${esc(r.lessonDate)}</td><td>${TYPE[r.lessonType] || ''} / ${LANG[r.lang] || ''}</td></tr>`).join('')}</table></div></details>`).join('') || '<p class="mu">Пока никто не делал поурочки.</p>';
+  $('bl').innerHTML = D.blocked.map(b => `<div class="bl-row"><span>${esc(b.entry)} <span class="mu">с ${esc(b.at.slice(0, 16))}</span></span><button class="ghost sm" data-u="${esc(b.entry)}">Разблокировать</button></div>`).join('') || '<p class="mu">Список пуст.</p>';
+}
+$('list').addEventListener('click', e => { const b = e.target.closest('[data-b]'); if (b) { e.preventDefault(); setBlock(b.dataset.b, true); } });
+$('list').addEventListener('toggle', e => { const k = e.target.dataset && e.target.dataset.k; if (k) e.target.open ? openKeys.add(k) : openKeys.delete(k); }, true);
+$('bl').addEventListener('click', e => { const u = e.target.closest('[data-u]'); if (u) setBlock(u.dataset.u, false); });
+$('bf').onsubmit = e => { e.preventDefault(); setBlock($('be').value, true); $('be').value = ''; };
+$('q').oninput = $('sort').onchange = render;
+if (token) load();
+</script></body></html>

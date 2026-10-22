@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Поурочный план</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<h1>Поурочный план</h1>
+<p class="sub">Заполните данные — готовый документ Word скачается автоматически.</p>
+<form id="f" class="card grid">
+  <div class="full"><label for="fio">ФИО преподавателя</label><input id="fio" required minlength="3" maxlength="100" autocomplete="name" placeholder="Баймұхан А.Б."></div>
+  <div class="full"><label for="module">Название модуля / дисциплины</label><input id="module" required maxlength="200" placeholder="ОН 6.1. Веб-сайттың құрылымын анықтау"></div>
+  <div class="full"><label for="topic">Тема занятия</label><input id="topic" required maxlength="300"></div>
+  <div><label for="date">Дата</label><input id="date" type="date" required></div>
+  <div><label for="group">Группа</label><input id="group" required maxlength="40" placeholder="ПО-31"></div>
+  <div><label for="lessonType">Тип урока</label><select id="lessonType"><option value="combined">Комбинированный (аралас)</option><option value="practice">Практика</option></select></div>
+  <div><label for="lang">Язык поурочки</label><select id="lang"><option value="kk">Қазақша</option><option value="ru">Русский</option></select></div>
+  <div class="full"><button id="go" type="submit">Получить поурочку</button><div id="msg" class="msg hide" role="status"></div></div>
+</form></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="config.js"></script><script src="docbuilder.js"></script>
+<script>
+const $ = id => document.getElementById(id), KEEP = ['fio', 'module', 'group', 'lang'];
+$('date').value = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+KEEP.forEach(k => { try { const v = localStorage.getItem('lp_' + k); if (v) $(k).value = v; } catch (e) {} });
+function say(t, cls) { const m = $('msg'); m.textContent = t; m.className = 'msg ' + (cls || ''); }
+$('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const form = { fio: $('fio').value, module: $('module').value, topic: $('topic').value, date: $('date').value,
+    group: $('group').value, lessonType: $('lessonType').value, lang: $('lang').value };
+  KEEP.forEach(k => { try { localStorage.setItem('lp_' + k, form[k]); } catch (e) {} });
+  $('go').disabled = true; say('Составляем поурочку, это занимает 20–60 секунд. Не закрывайте страницу…');
+  try {
+    const r = await api(Object.assign({ action: 'generate' }, form));
+    if (!r.ok) throw new Error(r.error || 'Ошибка');
+    const tpl = await (await fetch('template.docx')).arrayBuffer();
+    const blob = await DocBuilder.build(JSZip, tpl, form, r.data);
+    const a = document.createElement('a'), name = ('Поурочный план ' + form.group + ' ' + DocBuilder.dmy(form.date)).replace(/[\\/:*?"<>|]+/g, '_');
+    a.href = URL.createObjectURL(blob); a.download = name + '.docx'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 6e4);
+    say('Готово — файл «' + name + '.docx» скачан.', 'ok');
+  } catch (err) { say(err.message === 'Failed to fetch' ? 'Нет связи с сервером. Проверьте интернет и попробуйте снова.' : err.message, 'err'); }
+  $('go').disabled = false;
+});
+</script></body></html>
